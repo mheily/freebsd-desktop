@@ -212,13 +212,13 @@ class mail_transport_agent($enable = false) {
 class firewall($enable = false) {
   if $enable {
     fail('Not implemented yet')
-  } else {
-    rc_conf { 'pf_enable': content => 'YES' }
-    rc_conf { 'pflog_enable': content => 'YES' }
-    rc_conf { 'pf_flags': content => '' }
-    rc_conf { 'pf_rules': content => '/etc/pf.conf' }
     # TODO: need a simple default-deny ruleset
+  } else {
+    rc_conf { 'pf_enable': content => 'NO' }
+    rc_conf { 'pflog_enable': content => 'NO' }
   }
+  rc_conf { 'pf_flags': content => '' }
+  rc_conf { 'pf_rules': content => '/etc/pf.conf' }
 }
 
 class movie_player {

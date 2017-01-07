@@ -4,5 +4,5 @@ desktop.
 Usage:
 
   edit manifests/default.pp to suit
-  pkg install -y puppet
+  pkg install -y puppet4
   puppet apply manifests/default.pp
