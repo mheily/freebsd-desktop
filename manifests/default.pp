@@ -56,6 +56,7 @@ class dvorak_keymap {
 class slim_login_manager {
   package { 'slim': ensure => present }
   rc_conf { 'slim_enable': content => 'YES' }
+  package { 'kde': ensure => present } # default is openbox+kde
 }
 
 # X11 login manager
