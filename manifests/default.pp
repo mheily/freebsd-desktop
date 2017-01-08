@@ -1,11 +1,26 @@
 ### GLOBAL VARIABLES
-$user = 'vagrant'
+#
+$user = 'mark'
 $setxkbmap = 'dvorak'
-$xsession_manager = 'startlxde'
-$login_manager = 'slim'
+$desktop_environment = 'kde'
+$login_manager = 'kdm'
 $text_editor = 'vim'
 $ide = 'eclipse'
-$source_code = true	# checkout the FreeBSD source code
+
+# The office suite to use
+$office_suite = 'libreoffice'
+
+# Checkout the HEAD of the src and ports trees
+# *WARNING* takes a lot of space
+$source_code = false
+
+# Load the Nvidia driver (only enable this if you have a Nvidia card)
+$nvidia_driver = true
+
+# Set the default sound card device. Run "cat /dev/sndstat" to list them
+$default_sound_device=5
+
+#
 ####################
 
 define rc_conf($content) {
@@ -39,11 +54,6 @@ define loader_conf($content) {
   }
 }
 
-class xdm_display_manager {
-  package { 'xdm': ensure => present }
-  # FIXME: enable xdm in /etc/ttys
-}
-
 class fluxbox_window_manager {
   package { 'fluxbox': ensure => present }
 }
@@ -52,16 +62,19 @@ class dvorak_keymap {
   rc_conf { 'kbdmap': content => 'us.dvorak.kbd' }
 }
 
-# X11 login manager: SLiM
-class slim_login_manager {
-  package { 'slim': ensure => present }
-  rc_conf { 'slim_enable': content => 'YES' }
+class desktop_environment($use = $::desktop_environment) {
+  case $use {
+    'kde': {
+      package { 'kde': ensure => present }
+    }
+    default: { fail('Unknown DE') }
+  }
 }
 
 # X11 login manager
-class login_manager($use) {
+class login_manager($use = $::login_manager) {
   case $use {
-    'slim': { include slim_login_manager }
+    'kdm': { rc_conf { 'kdm4_enable': content => 'YES' } }
     default: { fail('Unknown login manager') }
   }
 }
@@ -82,19 +95,8 @@ class ide($use) {
   }
 }
 
-class xinitrc {
-  file { '/usr/local/etc/X11/xinit/xinitrc':
-    content => "#!/bin/sh
-
-# Chromium
-xset fp+ /usr/local/share/fonts/Droid
-xset fp rehash
-
-setxkbmap ${::setxkbmap}
-exec ${::xsession_manager}
-",
-    require => Package['xorg'],
-  }
+class office_suite($use = $::office_suite) {
+  package { 'libreoffice': ensure => present }
 }
 
 class firefox_web_browser {
@@ -106,14 +108,9 @@ class chromium_web_browser {
   sysctl { 'kern.ipc.shm_allow_removed': content => '1' }
 }
 
-class lxde_desktop {
-  package { 'lxde-meta': ensure => present }
-}
-
 # Things required to run an X11 server
 class x_server {
-  include xdm_display_manager
-  include xinitrc
+  # A backup WM, in case KDE is messed up
   include fluxbox_window_manager
 
   # Enable Kernel Mode Setting (KMS)
@@ -139,9 +136,18 @@ class printing {
 }
 
 # Use a sound card to make noise
-class sound {
+class sound($device = $::default_sound_device) {
   package { 'pulseaudio': ensure => present }
   rc_conf { 'mixer_enable': content => 'YES' }
+
+  # Set the default soundcard
+  sysctl { 'hw.snd.default_unit': content => $device }
+
+  # FIXME: the grep & echo does not account for changing $device multiple times
+  # This also seems to be unnecessary if the sysctl points to the right device
+  #exec { "/bin/sh -c 'echo \"set-default-sink ${device} # Puppet-default-sink\" >> /usr/local/etc/pulse/default.pa'":
+  #  unless => "/usr/bin/grep -q Puppet-default-sink /usr/local/etc/pulse/default.pa",
+  #}
 }
 
 # Allow the user to mount removable media like USB drives
@@ -221,6 +227,10 @@ class firewall($enable = false) {
   rc_conf { 'pf_rules': content => '/etc/pf.conf' }
 }
 
+class file_manager {
+  package { 'Thunar': ensure => present }
+}
+
 class movie_player {
   package { 'mplayer': ensure => present }
 }
@@ -275,17 +285,38 @@ class automatic_updates {
   # TODO
 }
 
+class nvidia_driver($enable = $::nvidia_driver) {
+  if ($enable) {
+    package { 'nvidia-driver': ensure => present }
+    package { 'nvidia-settings': ensure => present }
+
+    package { 'nvidia-xconfig': ensure => present }
+    ->
+    exec { 'nvidia-xconfig': 
+      path   => '/bin:/usr/bin:/usr/local/bin:/sbin:/usr/sbin:/usr/local/sbin',
+      creates => '/etc/X11/xorg.conf',
+    }
+    
+    rc_conf { 'kld_list': content => 'nvidia nvidia-modeset' }
+  }
+}
+
 include automatic_updates
 include development_tools
+include desktop_environment
+include file_manager
+include network_attached_storage
+include nvidia_driver
+include office_suite
 include printing
 include removable_media
 include sound
 if $::source_code { include source_code }
 include sudo
-include network_attached_storage
 include zeroconf_networking
 include web_browser
 include linux_emulation
+include login_manager
 include mail_transport_agent
 include firewall
 include movie_player
@@ -294,7 +325,5 @@ include wireless_networking
 include x_server
 
 include dvorak_keymap
-include lxde_desktop
-class { 'login_manager': use => $::login_manager }
 class { 'text_editor': use => $::text_editor }
 class { 'ide': use => $::ide }
