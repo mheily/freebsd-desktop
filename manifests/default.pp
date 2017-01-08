@@ -12,7 +12,7 @@ $office_suite = 'libreoffice'
 
 # Checkout the HEAD of the src and ports trees
 # *WARNING* takes a lot of space
-$source_code = false
+$source_code = true
 
 # Load the Nvidia driver (only enable this if you have a Nvidia card)
 $nvidia_driver = true
@@ -51,6 +51,16 @@ define loader_conf($content) {
     command => "sh -c 'echo ${title}=${content}' >> /boot/loader.conf",
     unless => "grep -q '^${title}=' /boot/loader.conf",
     path   => '/bin:/usr/bin',
+  }
+}
+
+define svn_repo($uri, $target) {
+  exec { "svn_repo_${title}":
+    command => "svn checkout ${uri} ${target}",
+    creates => $target,
+    path    => '/bin:/usr/bin:/usr/local/bin:/sbin:/usr/sbin',
+    timeout => 1800,
+    require => Package['subversion'],
   }
 }
 
@@ -252,21 +262,27 @@ class wireless_networking {
 
 # The source code for the base OS and the ports tree
 class source_code {
-  exec { "checkout_ports_tree":
-    command => 'svn co https://svn.FreeBSD.org/ports/head /usr/ports',
-    creates => '/usr/ports',
-    path    => '/bin:/usr/bin:/usr/local/bin:/sbin:/usr/sbin',
-    require => Package['subversion'],
+  $prefix = '/usr/local/src'
+  $project = 'FreeBSD-CURRENT'
+  
+  file { $prefix: ensure => directory } 
+  ->
+  file { "${prefix}/${project}": ensure => directory } 
+  ->
+  svn_repo { "ports":
+    uri => "https://svn.FreeBSD.org/ports/head",
+    target => "${prefix}/${project}/ports",
   }
-
-  exec { "checkout_base_tree":
-    command => 'svn co https://svn.FreeBSD.org/base/head /usr/src',
-    creates => '/usr/src/.svn',
-    path    => '/bin:/usr/bin:/usr/local/bin:/sbin:/usr/sbin',
-    require => Package['subversion'],
+  ->
+  svn_repo { "base":
+    uri => "https://svn.FreeBSD.org/base/head",
+    target => "${prefix}/${project}/base",
   }
-
-  # TODO: could also checkout doc tree in /usr/doc
+  ->
+  svn_repo { "doc":
+    uri => "https://svn.FreeBSD.org/doc/head",
+    target => "${prefix}/${project}/doc",
+  }
 }
 
 # Various tools needed for software development
