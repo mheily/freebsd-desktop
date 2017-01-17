@@ -2,8 +2,8 @@
 #
 $user = 'mark'
 $setxkbmap = 'dvorak'
-$desktop_environment = 'kde'
-$login_manager = 'kdm'
+$desktop_environment = 'kde5'
+$login_manager = 'sddm'
 $text_editor = 'vim'
 $ide = 'eclipse'
 
@@ -20,6 +20,9 @@ $nvidia_driver = true
 # Set the default sound card device. Run "cat /dev/sndstat" to list them
 $default_sound_device=5
 
+# Install remote access utilities (tmux, etc.)
+$remote_access = true
+
 #
 ####################
 
@@ -31,9 +34,12 @@ define rc_conf($content) {
    }
 }
 
+# FIXME: broken because it puts spaces between vars
+# tiem for 'puppet module install' ?
 define sysctl($content) {
   augeas { "sysctl/${title}":
-     context => "/files/etc/sysctl.conf",
+     incl    => "/etc/sysctl.conf",
+     lens    => "Sysctl.lns",
      onlyif  => "get ${title} != '${content}'",
      changes => "set ${title} '${content}'",
    }
@@ -57,7 +63,7 @@ define loader_conf($content) {
 define svn_repo($uri, $target) {
   exec { "svn_repo_${title}":
     command => "svn checkout ${uri} ${target}",
-    creates => $target,
+    creates => "${target}/.svn",
     path    => '/bin:/usr/bin:/usr/local/bin:/sbin:/usr/sbin',
     timeout => 1800,
     require => Package['subversion'],
@@ -77,6 +83,9 @@ class desktop_environment($use = $::desktop_environment) {
     'kde': {
       package { 'kde': ensure => present }
     }
+    'kde5': {
+      # TODO: Big complicated build process
+    }
     default: { fail('Unknown DE') }
   }
 }
@@ -85,6 +94,7 @@ class desktop_environment($use = $::desktop_environment) {
 class login_manager($use = $::login_manager) {
   case $use {
     'kdm': { rc_conf { 'kdm4_enable': content => 'YES' } }
+    'sddm': { warning('TODO: enable SDDM') }
     default: { fail('Unknown login manager') }
   }
 }
@@ -116,6 +126,11 @@ class firefox_web_browser {
 class chromium_web_browser {
   package { 'chromium': ensure => present }
   sysctl { 'kern.ipc.shm_allow_removed': content => '1' }
+}
+
+class remote_access($enable = $::remote_access) {
+  package { 'tmux': ensure => present }
+  # TODO: install and enable sshd
 }
 
 # Things required to run an X11 server
@@ -260,28 +275,21 @@ class wireless_networking {
   # TODO: wpa_supplicant and kernel modules
 }
 
-# The source code for the base OS and the ports tree
-class source_code {
-  $prefix = '/usr/local/src'
-  $project = 'FreeBSD-CURRENT'
-  
-  file { $prefix: ensure => directory } 
-  ->
-  file { "${prefix}/${project}": ensure => directory } 
-  ->
+# FreeBSD source code
+class source_code($enable = $::source_code) {
   svn_repo { "ports":
     uri => "https://svn.FreeBSD.org/ports/head",
-    target => "${prefix}/${project}/ports",
+    target => "/usr/ports",
   }
   ->
   svn_repo { "base":
-    uri => "https://svn.FreeBSD.org/base/head",
-    target => "${prefix}/${project}/base",
+    uri => "https://svn.FreeBSD.org/base/stable/11",
+    target => "/usr/src",
   }
   ->
   svn_repo { "doc":
     uri => "https://svn.FreeBSD.org/doc/head",
-    target => "${prefix}/${project}/doc",
+    target => "/usr/doc",
   }
 }
 
@@ -317,6 +325,10 @@ class nvidia_driver($enable = $::nvidia_driver) {
   }
 }
 
+class zfs {
+  rc_conf { 'zfs_enable': content => 'YES' }
+}
+
 include automatic_updates
 include development_tools
 include desktop_environment
@@ -325,9 +337,10 @@ include network_attached_storage
 include nvidia_driver
 include office_suite
 include printing
+include remote_access
 include removable_media
 include sound
-if $::source_code { include source_code }
+include source_code
 include sudo
 include zeroconf_networking
 include web_browser
@@ -339,6 +352,7 @@ include movie_player
 include image_software
 include wireless_networking
 include x_server
+include zfs
 
 include dvorak_keymap
 class { 'text_editor': use => $::text_editor }
